@@ -10,8 +10,10 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"server/db"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -58,6 +60,11 @@ func (s *StoreSuite) SetupTest() {
 		log.Fatal(err)
 	}
 
+	user := db.User{Username: "defaut", Password: "1234"}
+	if err := db.GetDB().Create(&user).Error; err != nil {
+		log.Fatal(err)
+	}
+
 	s.w = httptest.NewRecorder()
 }
 
@@ -71,10 +78,82 @@ func TestStoreSuite(t *testing.T) {
 	suite.Run(t, s)
 }
 
-func (s *StoreSuite) TestNextGame() {
+func postParams(params map[string]string) *strings.Reader {
+	data := url.Values{}
+	for key, val := range params {
+		data.Set(key, val)
+	}
+	return strings.NewReader(data.Encode())
+}
+
+func initMatch(matchDone bool) {
+	candidate_network := db.Network{Sha: "efgh", Path: "/tmp/network2"}
+	if err := db.GetDB().Create(&candidate_network).Error; err != nil {
+		log.Fatal(err)
+	}
+
+	match := db.Match{
+		TrainingRunID: 1,
+		Parameters:    `["--visits 10"]`,
+		CandidateID:   candidate_network.ID,
+		CurrentBestID: 1,
+		Done:          matchDone,
+	}
+	if err := db.GetDB().Create(&match).Error; err != nil {
+		log.Fatal(err)
+	}
+}
+
+// For backwards compatibility in short term.
+func (s *StoreSuite) TestNextGameNoUser() {
 	req, _ := http.NewRequest("POST", "/next_game", nil)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	s.router.ServeHTTP(s.w, req)
 
+	assert.Equal(s.T(), 200, s.w.Code, s.w.Body.String())
+	assert.JSONEqf(s.T(), `{"params":"","type":"train","trainingId":1,"networkId":1,"sha":"abcd"}`, s.w.Body.String(), "Body incorrect")
+}
+
+// Make sure old users don't get match games
+func (s *StoreSuite) TestNextGameNoUserMatch() {
+	initMatch(false)
+
+	req, _ := http.NewRequest("POST", "/next_game", nil)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	s.router.ServeHTTP(s.w, req)
+
+	assert.Equal(s.T(), 200, s.w.Code, s.w.Body.String())
+	assert.JSONEqf(s.T(), `{"params":"","type":"train","trainingId":1,"networkId":1,"sha":"abcd"}`, s.w.Body.String(), "Body incorrect")
+}
+
+func (s *StoreSuite) TestNextGameUserNoMatch() {
+	req, _ := http.NewRequest("POST", "/next_game", postParams(map[string]string{"user": "default", "password": "1234", "version": "2"}))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	s.router.ServeHTTP(s.w, req)
+
+	assert.Equal(s.T(), 200, s.w.Code, s.w.Body.String())
+	assert.JSONEqf(s.T(), `{"params":"","type":"train","trainingId":1,"networkId":1,"sha":"abcd"}`, s.w.Body.String(), "Body incorrect")
+}
+
+func (s *StoreSuite) TestNextGameUserMatch() {
+	initMatch(false)
+
+	req, _ := http.NewRequest("POST", "/next_game", postParams(map[string]string{"user": "default", "password": "1234", "version": "2"}))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	s.router.ServeHTTP(s.w, req)
+
+	assert.Equal(s.T(), 200, s.w.Code, s.w.Body.String())
+	assert.JSONEqf(s.T(), `{"params":"[\"--visits 10\"]","type":"match","matchGameId":1,"sha":"abcd","candidateSha":"efgh"}`, s.w.Body.String(), "Body incorrect")
+}
+
+func (s *StoreSuite) TestNextGameUserMatchDone() {
+	initMatch(true)
+
+	req, _ := http.NewRequest("POST", "/next_game", postParams(map[string]string{"user": "default", "password": "1234", "version": "2"}))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	s.router.ServeHTTP(s.w, req)
+
+	// Shouldn't get a match back
 	assert.Equal(s.T(), 200, s.w.Code, s.w.Body.String())
 	assert.JSONEqf(s.T(), `{"params":"","type":"train","trainingId":1,"networkId":1,"sha":"abcd"}`, s.w.Body.String(), "Body incorrect")
 }
@@ -177,4 +256,40 @@ func uploadTestNetwork(s *StoreSuite, contentString string, networkId int) {
 func (s *StoreSuite) TestUploadNetwork() {
 	uploadTestNetwork(s, "this_is_a_network", 2)
 	uploadTestNetwork(s, "network2", 3)
+}
+
+func (s *StoreSuite) TestPostMatchResult() {
+	initMatch(false)
+
+	// Initialize the MatchGame
+	req, _ := http.NewRequest("POST", "/next_game", postParams(map[string]string{"user": "default", "password": "1234", "version": "2"}))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	s.router.ServeHTTP(s.w, req)
+
+	assert.Equal(s.T(), 200, s.w.Code, s.w.Body.String())
+
+	// Now, post a result from the match
+	req, _ = http.NewRequest("POST", "/match_result", postParams(map[string]string{
+		"user":          "default",
+		"password":      "1234",
+		"version":       "2",
+		"match_game_id": "1",
+		"result":        "-1",
+		"pgn":           "asdf",
+	}))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	s.router.ServeHTTP(s.w, req)
+
+	assert.Equal(s.T(), 200, s.w.Code, s.w.Body.String())
+
+	// Check that the match is present now.
+	match_game := db.MatchGame{}
+	err := db.GetDB().Where("id = ?", 1).First(&match_game).Error
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	assert.Equal(s.T(), -1, match_game.Result)
+	assert.Equal(s.T(), "asdf", match_game.Pgn)
+	assert.Equal(s.T(), true, match_game.Done)
 }
