@@ -66,7 +66,7 @@ SearchResult UCTSearch::play_simulation(BoardHistory& bh, UCTNode* const node) {
 
     if (!node->has_children()) {
         bool drawn = cur.is_draw();
-        if (drawn || (!MoveList<LEGAL>(cur).size() && !cur.checkers))
+        if (drawn || (!MoveList<LEGAL>(cur).size() && !cur.checkers()))
         {
             float score = 0.0;
             result = SearchResult::from_score(score);
