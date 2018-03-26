@@ -45,6 +45,7 @@ public:
     bool first_visit() const;
     bool has_children() const;
     bool create_children(std::atomic<int> & nodecount, const BoardHistory& state, float& eval);
+    float eval_state(const BoardHistory& state);
     Move get_move() const;
     int get_visits() const;
     float get_score() const;

@@ -66,13 +66,22 @@ SearchResult UCTSearch::play_simulation(BoardHistory& bh, UCTNode* const node) {
 
     if (!node->has_children()) {
         bool drawn = cur.is_draw();
-        if (drawn || !MoveList<LEGAL>(cur).size()) {
-            float score = (drawn || !cur.checkers()) ? 0.0 : (color == Color::WHITE ? -1.0 : 1.0);
+        if (drawn || (!MoveList<LEGAL>(cur).size() && !cur.checkers))
+        {
+            float score = 0.0;
             result = SearchResult::from_score(score);
-        } else if (m_nodes < MAX_TREE_SIZE) {
+        }
+        else if (m_nodes < MAX_TREE_SIZE)
+        {
             float eval;
             auto success = node->create_children(m_nodes, bh, eval);
-            if (success) {
+            if (success)
+            {
+                result = SearchResult::from_eval(eval);
+            }
+            else
+            {
+                auto eval = node->eval_state(bh);
                 result = SearchResult::from_eval(eval);
             }
         }
