@@ -24,6 +24,9 @@ func checkUser(c *gin.Context) (*db.User, error) {
 	if len(c.PostForm("user")) == 0 {
 		return nil, errors.New("No user supplied")
 	}
+	if len(c.PostForm("user")) > 32 {
+		return nil, errors.New("Username too long")
+	}
 
 	user := &db.User{
 		Password: c.PostForm("password"),
@@ -239,6 +242,18 @@ func uploadGame(c *gin.Context) {
 		return
 	}
 
+	version, err := strconv.ParseUint(c.PostForm("version"), 10, 64)
+	if err != nil {
+		log.Println(err.Error())
+		c.String(http.StatusBadRequest, "Invalid version")
+		return
+	}
+	if version < 3 {
+		log.Println("Rejecting old game from %s, version %d", user.Username, version)
+		c.String(http.StatusBadRequest, "\n\n\n\n\nYou must upgrade to a newer version!!\n\n\n\n\n")
+		return
+	}
+
 	training_id, err := strconv.ParseUint(c.PostForm("training_id"), 10, 32)
 	if err != nil {
 		log.Println(err)
@@ -283,12 +298,6 @@ func uploadGame(c *gin.Context) {
 	}
 
 	// Create new game
-	version, err := strconv.ParseUint(c.PostForm("version"), 10, 64)
-	if err != nil {
-		log.Println(err.Error())
-		c.String(http.StatusBadRequest, "Invalid version")
-		return
-	}
 	game := db.TrainingGame{
 		UserID:        user.ID,
 		TrainingRunID: training_run.ID,
@@ -479,6 +488,10 @@ ORDER BY c.count DESC`).Rows()
 
 		active_users += 1
 		games_played += int(count)
+
+		if len(username) > 32 {
+			username = username[0:32] + "..."
+		}
 
 		users_json = append(users_json, gin.H{
 			"user":         username,
