@@ -176,15 +176,15 @@ Move UCTSearch::get_best_move() {
 
     // Check whether to randomize the best move proportional
     // to the (exponentiated) visit counts.
-   
+
     if (cfg_randomize) {
         auto root_temperature = 1.0f;
         // If a temperature decay schedule is set, calculate root temperature from
-        // ply count and decay constant. Set default value for too small root temperature. 
+        // ply count and decay constant. Set default value for too small root temperature.
         if (cfg_root_temp_decay > 0) {
             root_temperature = get_root_temperature();
             myprintf("Game ply: %d, root temperature: %5.2f \n",bh_.cur().game_ply()+1, root_temperature);
-        } 
+        }
         m_root->randomize_first_proportionally(root_temperature);
     }
 
@@ -245,7 +245,7 @@ void UCTSearch::dump_analysis(int64_t elapsed, bool force_output) {
     // UCI-like output wants a depth and a cp.
     // convert winrate to a cp estimate ... assume winrate = 1 / (1 + exp(-cp / 91))
     // (91 can be tuned to have an output more or less matching e.g. SF, once both have similar strength)
-    int   cp = 100 * tan(3.125 * (feval - 0.5));
+    int   cp = 162 * tan(3.14 * (feval - 0.5));
     // same for nodes to depth, assume nodes = 1.8 ^ depth.
     int   depth = log(float(m_nodes)) / log(1.8);
     // To report nodes, use visits.
