@@ -11,9 +11,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"server/db"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/multitemplate"
@@ -45,7 +47,7 @@ func checkUser(c *gin.Context) (*db.User, uint64, error) {
 	if err != nil {
 		return nil, 0, errors.New("Invalid version")
 	}
-	if version < 4 {
+	if version < 5 {
 		log.Println("Rejecting old game from %s, version %d", user.Username, version)
 		return nil, 0, errors.New("\n\n\n\n\nYou must upgrade to a newer version!!\n\n\n\n\n")
 	}
@@ -222,6 +224,15 @@ func uploadNetwork(c *gin.Context) {
 		return
 	}
 
+	// TODO(gary): Make this more generic - upload to s3 for now
+	cmd := exec.Command("aws", "s3", "cp", network.Path, "s3://lczero/" + network.Path)
+	err = cmd.Run()
+	if err != nil {
+		log.Println(err.Error())
+		c.String(500, "Uploading to s3")
+		return
+	}
+
 	// Create a match to see if this network is better
 	training_run, err := getTrainingRun(training_run_id)
 	if err != nil {
@@ -236,7 +247,7 @@ func uploadNetwork(c *gin.Context) {
 		CurrentBestID: training_run.BestNetworkID,
 		Done:          false,
 		GameCap:       400,
-		Parameters:    `["--noise"]`,
+		Parameters:    `["--tempdecay=10"]`,
 	}
 	err = db.GetDB().Create(&match).Error
 	if err != nil {
@@ -306,6 +317,7 @@ func uploadGame(c *gin.Context) {
 		NetworkID:     network.ID,
 		Version:       uint(version),
 		Pgn:           c.PostForm("pgn"),
+		EngineVersion: c.PostForm("engineVersion"),
 	}
 	db.GetDB().Create(&game)
 	db.GetDB().Model(&game).Update("path", filepath.Join("games", fmt.Sprintf("run%d/training.%d.gz", training_run.ID, game.ID)))
@@ -336,7 +348,9 @@ func getNetwork(c *gin.Context) {
 	}
 
 	// Serve the file
-	c.File(network.Path)
+	// NOTE: Disabled due to bandwidth, re-enable this for tests...
+	// c.File(network.Path)
+	c.Redirect(http.StatusMovedPermanently, "https://s3.amazonaws.com/lczero/" + network.Path)
 }
 
 func setBestNetwork(training_id uint, network_id uint) error {
@@ -370,9 +384,12 @@ func checkMatchFinished(match_id uint) error {
 		if err != nil {
 			return err
 		}
+		if match.TestOnly {
+			return nil
+		}
 		// Update to our new best network
 		// TODO(SPRT)
-		passed := calcElo(match.Wins, match.Losses, match.Draws) > -50.0
+		passed := calcElo(match.Wins, match.Losses, match.Draws) > -150.0
 		err = db.GetDB().Model(&match).Update("passed", passed).Error
 		if err != nil {
 			return err
@@ -425,10 +442,11 @@ func matchResult(c *gin.Context) {
 	}
 
 	err = db.GetDB().Model(&match_game).Updates(db.MatchGame{
-		Version: uint(version),
-		Result:  int(result),
-		Done:    true,
-		Pgn:     c.PostForm("pgn"),
+		Version:       uint(version),
+		Result:        int(result),
+		Done:          true,
+		Pgn:           c.PostForm("pgn"),
+		EngineVersion: c.PostForm("engineVersion"),
 	}).Error
 	if err != nil {
 		log.Println(err)
@@ -463,7 +481,7 @@ func matchResult(c *gin.Context) {
 }
 
 func getActiveUsers() (gin.H, error) {
-	rows, err := db.GetDB().Raw(`SELECT user_id, username, MAX(version), MAX(training_games.created_at), count(*) FROM training_games
+	rows, err := db.GetDB().Raw(`SELECT user_id, username, MAX(version), MAX(engine_version), MAX(training_games.created_at), count(*) FROM training_games
 LEFT JOIN users
 ON users.id = training_games.user_id
 WHERE training_games.created_at >= now() - INTERVAL '1 day'
@@ -481,9 +499,10 @@ ORDER BY count DESC`).Rows()
 		var user_id uint
 		var username string
 		var version int
+		var engine_version string
 		var created_at time.Time
 		var count uint64
-		rows.Scan(&user_id, &username, &version, &created_at, &count)
+		rows.Scan(&user_id, &username, &version, &engine_version, &created_at, &count)
 
 		active_users += 1
 		games_played += int(count)
@@ -497,6 +516,7 @@ ORDER BY count DESC`).Rows()
 			"games_today":  count,
 			"system":       "",
 			"version":      version,
+			"engine":       engine_version,
 			"last_updated": created_at,
 		})
 	}
@@ -543,10 +563,13 @@ func getProgress() ([]gin.H, error) {
 	var elo float64 = 0.0
 	var matchIdx int = 0
 	for _, network := range networks {
-		count += counts[network.ID]
 		var sprt string = "???"
 		var best bool = false
-		for matchIdx < len(matches) && matches[matchIdx].CurrentBestID == network.ID {
+		for matchIdx < len(matches) && matches[matchIdx].CandidateID == network.ID {
+			if matches[matchIdx].TestOnly {
+				matchIdx += 1
+				continue
+			}
 			matchElo := calcElo(matches[matchIdx].Wins, matches[matchIdx].Losses, matches[matchIdx].Draws)
 			if matches[matchIdx].Done {
 				if matches[matchIdx].Passed {
@@ -570,7 +593,7 @@ func getProgress() ([]gin.H, error) {
 			matchIdx += 1
 		}
 		// TODO(gary): Hack for start...
-		if network.ID == 2 {
+		if network.ID == 3 {
 			result = append(result, gin.H{
 				"net":    count,
 				"rating": elo,
@@ -579,6 +602,7 @@ func getProgress() ([]gin.H, error) {
 				"hash":   network.Sha[0:8],
 			})
 		}
+		count += counts[network.ID]
 	}
 
 	return result, nil
@@ -684,7 +708,7 @@ func viewMatchGame(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "game", gin.H{
-		"pgn": game.Pgn,
+		"pgn": strings.Replace(game.Pgn, "e.p.", "", -1),
 	})
 }
 
