@@ -765,7 +765,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
   // Update king attacks used for fast check detection
   set_check_info(st);
-  
+
   st->move = m;
 
   assert(pos_is_ok());
@@ -940,7 +940,7 @@ bool Position::is_draw() const {  //--didn't understand this _ply_ parameter; de
   for (int i = 4; i <= end; i += 2)
   {
       stp = stp->previous->previous;
-      if (stp->key == st->key && ++cnt == 2)
+      if (stp->key == st->key) // First Rep Cutoff
           return true;
   }
 
@@ -965,13 +965,13 @@ bool Position::is_draw_by_insufficient_material() const {
 
 int Position::repetitions_count() const {
   int end = std::min(st->rule50, st->pliesFromNull);
-  
+
   if (end < 4)
     return 0;
-  
+
   StateInfo* stp = st->previous->previous;
   int cnt = 0;
-  
+
   for (int i = 4; i <= end; i += 2)
   {
     stp = stp->previous->previous;
