@@ -176,9 +176,9 @@ float UCTSearch::dynamic_temperature(float rt) {
     auto bh = bh_.shallow_clone();
     Color color = bh.cur().side_to_move();
     float eval_dfd = abs(0.5 - m_root->get_eval(color)); // distance from draw
-    float max_red_percent = 90;
+    float max_red_percent = 70;
     float reduction_ratio = 1 - eval_dfd * max_red_percent / 50;
-    rt = std::max(0.05f, rt * reduction_ratio);
+    rt = std::max(0.3f, rt * reduction_ratio);
 
     return rt;
 }
