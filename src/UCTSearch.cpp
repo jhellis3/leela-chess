@@ -110,7 +110,7 @@ void UCTSearch::dump_stats(BoardHistory& state, UCTNode& parent) {
         return;
     }
 
-    auto root_temperature = 1.0f;
+    auto root_temperature = 0.8f;
     auto normfactor = float(m_root->get_first_child()->get_visits());
     auto accum = 0.0f;
     if (cfg_randomize) {
@@ -179,7 +179,7 @@ Move UCTSearch::get_best_move() {
     // to the (exponentiated) visit counts.
 
     if (cfg_randomize) {
-        auto root_temperature = 1.0f;
+        auto root_temperature = 0.8f;
         // If a temperature decay schedule is set, calculate root temperature from
         // ply count and decay constant. Set default value for too small root temperature.
         if (cfg_root_temp_decay > 0) {
