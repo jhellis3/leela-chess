@@ -1205,7 +1205,7 @@ void Network::gather_features(const BoardHistory& bh, NNPlanes& planes) {
         addPieces<QUEEN >(pos, them, planes, i * get_hist_planes() + 10, flip);
         addPieces<KING  >(pos, them, planes, i * get_hist_planes() + 11, flip);
 
-        int repetitions = pos->repetitions_count();
+        int repetitions = 0;
         if (repetitions >= 1) planes.bit[i * get_hist_planes() + 12].set();
         if (m_format_version == 1) {
             if (repetitions >= 2) planes.bit[i * get_hist_planes() + 13].set();
