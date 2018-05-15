@@ -36,7 +36,6 @@ using std::string;
 const char* Position::StartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 // Use conservative value for now.
 // Can tune performance/accuracy tradeoff later.
-static constexpr auto RULE50_SCALE = 1;
 
 namespace Zobrist {
 
@@ -44,7 +43,6 @@ namespace Zobrist {
   Key enpassant[FILE_NB];
   Key castling[CASTLING_RIGHT_NB];
   Key side;
-  Key rule50[102/RULE50_SCALE];
 }
 
 namespace {
@@ -120,16 +118,12 @@ void Position::init() {
   }
 
   Zobrist::side = rng.RandInt<Key>();
-  for (int i = 0; i < 102/RULE50_SCALE; ++i) {
-      Zobrist::rule50[i] = rng.RandInt<Key>();
-  }
 }
 
 Key Position::full_key() const {
-  auto rule50 = std::min(101 / RULE50_SCALE, st->rule50 / RULE50_SCALE);
   // NOTE: Network will call this and then repetitions_count
   // on cache misses. Could be optimized.
-  return st->key ^ Zobrist::rule50[rule50];
+  return st->key;
 }
 
 /// Position::set() initializes the position object with the given FEN string.
