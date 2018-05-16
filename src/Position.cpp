@@ -34,9 +34,6 @@
 using std::string;
 
 const char* Position::StartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-// Use conservative value for now.
-// Can tune performance/accuracy tradeoff later.
-static constexpr auto RULE50_SCALE = 1;
 
 namespace Zobrist {
 
@@ -44,7 +41,6 @@ namespace Zobrist {
   Key enpassant[FILE_NB];
   Key castling[CASTLING_RIGHT_NB];
   Key side;
-  Key rule50[102/RULE50_SCALE];
   Key repetitions[3];
 }
 
@@ -121,20 +117,17 @@ void Position::init() {
   }
 
   Zobrist::side = rng.RandInt<Key>();
-  for (int i = 0; i < 102/RULE50_SCALE; ++i) {
-      Zobrist::rule50[i] = rng.RandInt<Key>();
-  }
+
   for (int i = 0; i <= 2; ++i) {
       Zobrist::repetitions[i] = rng.RandInt<Key>();
   }
 }
 
 Key Position::full_key() const {
-  auto rule50 = std::min(101 / RULE50_SCALE, st->rule50 / RULE50_SCALE);
   auto reps = std::min(2, repetitions_count());
   // NOTE: Network will call this and then repetitions_count
   // on cache misses. Could be optimized.
-  return st->key ^ Zobrist::rule50[rule50] ^ Zobrist::repetitions[reps];
+  return st->key ^ Zobrist::repetitions[reps];
 }
 
 /// Position::set() initializes the position object with the given FEN string.
@@ -773,7 +766,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
   // Update king attacks used for fast check detection
   set_check_info(st);
-  
+
   st->move = m;
 
   assert(pos_is_ok());
@@ -973,13 +966,13 @@ bool Position::is_draw_by_insufficient_material() const {
 
 int Position::repetitions_count() const {
   int end = std::min(st->rule50, st->pliesFromNull);
-  
+
   if (end < 4)
     return 0;
-  
+
   StateInfo* stp = st->previous->previous;
   int cnt = 0;
-  
+
   for (int i = 4; i <= end; i += 2)
   {
     stp = stp->previous->previous;
