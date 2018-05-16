@@ -70,10 +70,12 @@ SearchResult UCTSearch::play_simulation(BoardHistory& bh, UCTNode* const node, i
         m_maxdepth = ndepth;
     }
 
+    if (cur.is_draw())
+        result = SearchResult::from_score(0.0);
+
     if (!node->has_children()) {
-        bool drawn = cur.is_draw();
-        if (drawn || !MoveList<LEGAL>(cur).size()) {
-            float score = (drawn || !cur.checkers()) ? 0.0 : (color == Color::WHITE ? -1.0 : 1.0);
+        if (!MoveList<LEGAL>(cur).size()) {
+            float score = !cur.checkers() ? 0.0 : (color == Color::WHITE ? -1.0 : 1.0);
             result = SearchResult::from_score(score);
         } else if (m_nodes < MAX_TREE_SIZE) {
             Tablebases::ProbeState err = Tablebases::ProbeState::FAIL;
