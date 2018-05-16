@@ -65,13 +65,16 @@ SearchResult UCTSearch::play_simulation(BoardHistory& bh, UCTNode* const node, i
 
     auto result = SearchResult{};
 
+    if (result.valid() && cur.is_draw()) {
+        node->update(0.5f);
+        result = SearchResult::from_score(0.0);
+        return result;
+    }
+
     node->virtual_loss();
     if (ndepth > m_maxdepth) {
         m_maxdepth = ndepth;
     }
-
-    if (cur.is_draw())
-        result = SearchResult::from_score(0.0);
 
     if (!node->has_children()) {
         if (!MoveList<LEGAL>(cur).size()) {
